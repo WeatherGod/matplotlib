@@ -1004,7 +1004,7 @@ class BlendedGenericTransform3D(BlendedGenericTransform, Transform):
         # Here we ask: "Does it blend?"
 
         self._z = z_transform
-        BlendedGenericTransform3D.__init__(self, x_transform, y_transform)
+        BlendedGenericTransform.__init__(self, x_transform, y_transform)
         self.set_children(z_transform)
 
     def _get_is_affine(self):
@@ -1032,18 +1032,26 @@ class BlendedGenericTransform3D(BlendedGenericTransform, Transform):
             x_points = x.transform(points)[:, 0:1]
         else:
             x_points = x.transform(points[:, 0])
-            x_points = x_points.reshape((len(x_points), 1))
+            x_points.shape = (-1, 1)
 
         if y.input_dims == 2:
-            y_points = y.transform(points)[:, 1:]
+            y_points = y.transform(points)[:, 1:2]
         else:
             y_points = y.transform(points[:, 1])
-            y_points = y_points.reshape((len(y_points), 1))
+            y_points.shape = (-1, 1)
 
-        if isinstance(x_points, MaskedArray) or isinstance(y_points, MaskedArray):
-            return ma.concatenate((x_points, y_points), 1)
+        if z.input_dims == 2:
+            z_points = z.transform(points)[:, 2:3]
         else:
-            return np.concatenate((x_points, y_points), 1)
+            z_points = z.transform(points[:, 2])
+            z_points.shape = (-1, 1)
+
+        if (isinstance(x_points, MaskedArray)
+            or isinstance(y_points, MaskedArray)
+            or isinstance(z_points, MaskedArray)):
+            return ma.concatenate((x_points, y_points, z_points), 1)
+        else:
+            return np.concatenate((x_points, y_points, z_points), 1)
     transform.__doc__ = Transform.transform.__doc__
 
     def transform_non_affine(self, points):
@@ -1059,8 +1067,7 @@ class BlendedGenericTransform3D(BlendedGenericTransform, Transform):
     def get_affine(self):
         if self._invalid or self._affine is None:
             if self.is_affine :
-                # TODO: Huh??????????????????????
-                if self._x == self._y:
+                if self._x == self._y and self._y == self._z :
                     self._affine = self._x.get_affine()
                 else:
                     x_mtx = self._x.get_affine().get_matrix()
@@ -1081,21 +1088,21 @@ class BlendedGenericTransform3D(BlendedGenericTransform, Transform):
 class BlendedAffine3D(Affine3DBase):
     """
     A "blended" transform uses one transform for the *x*-direction, and
-    another transform for the *y*-direction.
+    another transform for the *y*-direction, and another transform for the
+    *z*-direction.
 
     This version is an optimization for the case where both child
-    transforms are of type :class:`Affine2DBase`.
+    transforms are of type :class:`Affine3DBase`.
     """
     is_separable = True
 
-    def __init__(self, x_transform, y_transform):
+    def __init__(self, x_transform, y_transform, z_transform):
         """
         Create a new "blended" transform using *x_transform* to
         transform the *x*-axis and *y_transform* to transform the
-        *y*-axis.
+        *y*-axis, and *z_transform* to transform the *z*-axis.
 
-        Both *x_transform* and *y_transform* must be 2D affine
-        transforms.
+        The transforms must be 3D affine transforms.
 
         You will generally not call this constructor directly but use
         the :func:`blended_transform_factory` function instead, which
@@ -1104,39 +1111,44 @@ class BlendedAffine3D(Affine3DBase):
         """
         assert x_transform.is_affine
         assert y_transform.is_affine
+        assert z_transform.is_affine
         assert x_transform.is_separable
         assert y_transform.is_separable
+        assert z_transform.is_separable
+        
 
-        Transform.__init__(self)
+        Transf.__init__(self)
         self._x = x_transform
         self._y = y_transform
-        self.set_children(x_transform, y_transform)
+        self._z = z_transform
+        self.set_children(x_transform, y_transform, z_transform)
 
         Affine2DBase.__init__(self)
         self._mtx = None
 
     def __repr__(self):
-        return "BlendedAffine2D(%s,%s)" % (self._x, self._y)
+        return "BlendedAffine3D(%s,%s, %s)" % (self._x, self._y, self._z)
     __str__ = __repr__
 
     def get_matrix(self):
         if self._invalid:
-            if self._x == self._y:
+            if self._x == self._y and self._y == self._z :
                 self._mtx = self._x.get_matrix()
             else:
                 x_mtx = self._x.get_matrix()
                 y_mtx = self._y.get_matrix()
+                z_mtx = self._z.get_matrix()
                 # This works because we already know the transforms are
-                # separable, though normally one would want to set b and
-                # c to zero.
-                self._mtx = np.vstack((x_mtx[0], y_mtx[1], [0.0, 0.0, 1.0]))
+                # separable, though normally one would want to set ? and
+                # ? to zero.
+                self._mtx = np.vstack((x_mtx[0], y_mtx[1], z_mtx[2], [0.0, 0.0, 0.0, 1.0]))
             self._inverted = None
             self._invalid = 0
         return self._mtx
-    get_matrix.__doc__ = Affine2DBase.get_matrix.__doc__
+    get_matrix.__doc__ = Affine3DBase.get_matrix.__doc__
 
 
-def blended_transform_factory(x_transform, y_transform):
+def blended_transform_factory(x_transform, y_transform, z_transform=None):
     """
     Create a new "blended" transform using *x_transform* to transform
     the *x*-axis and *y_transform* to transform the *y*-axis.
@@ -1144,151 +1156,42 @@ def blended_transform_factory(x_transform, y_transform):
     A faster version of the blended transform is returned for the case
     where both child transforms are affine.
     """
-    if (isinstance(x_transform, Affine2DBase)
-        and isinstance(y_transform, Affine2DBase)):
-        return BlendedAffine2D(x_transform, y_transform)
-    return BlendedGenericTransform(x_transform, y_transform)
+    if z_transform is None :
+        if (isinstance(x_transform, Affine2DBase)
+            and isinstance(y_transform, Affine2DBase)):
+            return BlendedAffine2D(x_transform, y_transform)
+        return BlendedGenericTransform(x_transform, y_transform)
+    else :
+        if (isinstance(x_transform, Affine3DBase)
+            and isinstance(y_transform, Affine3DBase)
+            and isinstance(z_transform, Affine3DBase)) :
+            return BlendedAffine3D(x_transform, y_transform, z_transform)
+        return BlendedGenericTransform3D(x_transform, y_transform, z_transform)
 
 
-class CompositeGenericTransform(Transform):
-    """
-    A composite transform formed by applying transform *a* then
-    transform *b*.
 
-    This "generic" version can handle any two arbitrary
-    transformations.
-    """
-    pass_through = True
-
-    def __init__(self, a, b):
-        """
-        Create a new composite transform that is the result of
-        applying transform *a* then transform *b*.
-
-        You will generally not call this constructor directly but use
-        the :func:`composite_transform_factory` function instead,
-        which can automatically choose the best kind of composite
-        transform instance to create.
-        """
-        assert a.output_dims == b.input_dims
-        self.input_dims = a.input_dims
-        self.output_dims = b.output_dims
-
-        Transform.__init__(self)
-        self._a = a
-        self._b = b
-        self.set_children(a, b)
-
-    def frozen(self):
-        self._invalid = 0
-        frozen = composite_transform_factory(self._a.frozen(), self._b.frozen())
-        if not isinstance(frozen, CompositeGenericTransform):
-            return frozen.frozen()
-        return frozen
-    frozen.__doc__ = Transform.frozen.__doc__
-
-    def _get_is_affine(self):
-        return self._a.is_affine and self._b.is_affine
-    is_affine = property(_get_is_affine)
-
-    def _get_is_separable(self):
-        return self._a.is_separable and self._b.is_separable
-    is_separable = property(_get_is_separable)
-
-    def __repr__(self):
-        return "CompositeGenericTransform(%s, %s)" % (self._a, self._b)
-    __str__ = __repr__
-
-    def transform(self, points):
-        return self._b.transform(
-            self._a.transform(points))
-    transform.__doc__ = Transform.transform.__doc__
-
-    def transform_affine(self, points):
-        return self.get_affine().transform(points)
-    transform_affine.__doc__ = Transform.transform_affine.__doc__
-
-    def transform_non_affine(self, points):
-        if self._a.is_affine and self._b.is_affine:
-            return points
-        return self._b.transform_non_affine(
-            self._a.transform(points))
-    transform_non_affine.__doc__ = Transform.transform_non_affine.__doc__
-
-    def transform_path(self, path):
-        return self._b.transform_path(
-            self._a.transform_path(path))
-    transform_path.__doc__ = Transform.transform_path.__doc__
-
-    def transform_path_affine(self, path):
-        return self._b.transform_path_affine(
-            self._a.transform_path(path))
-    transform_path_affine.__doc__ = Transform.transform_path_affine.__doc__
-
-    def transform_path_non_affine(self, path):
-        if self._a.is_affine and self._b.is_affine:
-            return path
-        return self._b.transform_path_non_affine(
-            self._a.transform_path(path))
-    transform_path_non_affine.__doc__ = Transform.transform_path_non_affine.__doc__
-
-    def get_affine(self):
-        if self._a.is_affine and self._b.is_affine:
-            return Affine2D(np.dot(self._b.get_affine().get_matrix(),
-                                    self._a.get_affine().get_matrix()))
-        else:
-            return self._b.get_affine()
-    get_affine.__doc__ = Transform.get_affine.__doc__
-
-    def inverted(self):
-        return CompositeGenericTransform(self._b.inverted(), self._a.inverted())
-    inverted.__doc__ = Transform.inverted.__doc__
-
-
-class CompositeAffine2D(Affine2DBase):
+class CompositeAffine3D(CompositeAffine2D, Affine3DBase):
     """
     A composite transform formed by applying transform *a* then transform *b*.
 
     This version is an optimization that handles the case where both *a*
-    and *b* are 2D affines.
+    and *b* are 3D affines.
     """
-    def __init__(self, a, b):
-        """
+    __init__.__doc__ = """
         Create a new composite transform that is the result of
         applying transform *a* then transform *b*.
 
-        Both *a* and *b* must be instances of :class:`Affine2DBase`.
+        Both *a* and *b* must be instances of :class:`Affine3DBase`.
 
         You will generally not call this constructor directly but use
         the :func:`composite_transform_factory` function instead,
         which can automatically choose the best kind of composite
         transform instance to create.
         """
-        assert a.output_dims == b.input_dims
-        self.input_dims = a.input_dims
-        self.output_dims = b.output_dims
-        assert a.is_affine
-        assert b.is_affine
-
-        Affine2DBase.__init__(self)
-        self._a = a
-        self._b = b
-        self.set_children(a, b)
-        self._mtx = None
 
     def __repr__(self):
-        return "CompositeAffine2D(%s, %s)" % (self._a, self._b)
+        return "CompositeAffine3D(%s, %s)" % (self._a, self._b)
     __str__ = __repr__
-
-    def get_matrix(self):
-        if self._invalid:
-            self._mtx = np.dot(
-                self._b.get_matrix(),
-                self._a.get_matrix())
-            self._inverted = None
-            self._invalid = 0
-        return self._mtx
-    get_matrix.__doc__ = Affine2DBase.get_matrix.__doc__
 
 
 def composite_transform_factory(a, b):
