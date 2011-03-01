@@ -348,14 +348,13 @@ class BboxBase(TransformNode):
         :attr:`y1` < :attr:`y0`.""")
 
     def _get_size(self):
-        points = self.get_points()
-        return points[1] - points[0]
+        return self.p1 - self.p0
     size = property(_get_size, None, None, """
         (property) The width and height of the bounding box.  May be negative,
         in the same way as :attr:`width` and :attr:`height`.""")
 
     def _get_bounds(self):
-        return self.p0.tolist() + (self.p1 - self.p0).tolist()
+        return self.p0.tolist() + self.size.tolist()
     bounds = property(_get_bounds, None, None, """
         (property) Returns (:attr:`x0`, :attr:`y0`, :attr:`width`,
         :attr:`height`).""")
@@ -382,21 +381,23 @@ class BboxBase(TransformNode):
         Returns True if *x* is between or equal to :attr:`x0` and
         :attr:`x1`.
         """
-        return all(_contains(self.intervalx, x))
+        return np.all(_contains(self.intervalx, x))
 
     def containsy(self, y):
         """
         Returns True if *y* is between or equal to :attr:`y0` and
         :attr:`y1`.
         """
-        return all(_contains(self.intervaly, y))
+        return np.all(_contains(self.intervaly, y))
 
-    def contains(self, x, y):
+    def contains(self, x, y, *args):
         """
         Returns *True* if (*x*, *y*) is a coordinate inside the
         bounding box or on its edge.
         """
-        return self.containsx(x) and self.containsy(y)
+        other_dims = [np.all(_contains(self.get_points()[:, i + 2], z))
+                      for i, z in enumerate(args)]
+        return self.containsx(x) and self.containsy(y) and all(other_dims)
 
     def overlaps(self, other):
         """
@@ -425,21 +426,24 @@ class BboxBase(TransformNode):
         Returns True if *x* is between but not equal to :attr:`x0` and
         :attr:`x1`.
         """
-        return all(_fully_contains(self.intervalx, x))
+        return np.all(_fully_contains(self.intervalx, x))
 
     def fully_containsy(self, y):
         """
         Returns True if *y* is between but not equal to :attr:`y0` and
         :attr:`y1`.
         """
-        return all(_fully_contains(self.intervaly, y))
+        return np.all(_fully_contains(self.intervaly, y))
 
-    def fully_contains(self, x, y):
+    def fully_contains(self, x, y, *args):
         """
         Returns True if (*x*, *y*) is a coordinate inside the bounding
         box, but not on its edge.
         """
-        return self.fully_containsx(x) and self.fully_containsy(y)
+        other_dims = [np.all(_fully_contains(self.get_points()[:, i + 2], z))
+                      for i, z in enumerate(args)]
+        return (self.fully_containsx(x) and self.fully_containsy(y) and
+                all(other_dims))
 
     def fully_overlaps(self, other):
         """
@@ -498,19 +502,23 @@ class BboxBase(TransformNode):
         :class:`Bbox` is positioned; it defaults to the initial
         :class:`Bbox`.
         """
+        # For now, we assume that the container Bbox and the self Bbox
+        # are for the same number of dimensions.
         if container is None:
             container = self
         cont_bounds = container.bounds
-        cont_mid = int(len(cont_bounds) / 2)
+        cont_mid = container.p0.shape[0]
         l = np.array(cont_bounds[:cont_mid])
         w = np.array(cont_bounds[cont_mid:])
         if isinstance(c, str):
-            # TODO: Need to pad this if the others are expecting 3D.
-            cx = np.array(self.coefs[c])
-        else:
-            cx = np.array(c)
+            c = self.coefs[c]
+
+        # Pad on additional elements as needed, and make the array
+        # have a length identical to the length of l and w.
+        cx = np.r_[c, [0] * max(cont_mid - len(c), 0)][:cont_mid]
+        
         bounds = self.bounds
-        mid = int(len(bounds) / 2)
+        mid = self.p0.shape[0]
         L = np.array(bounds[:mid])
         W = np.array(bounds[mid:])
         return Bbox(self.get_points() + ((l + cx * (w-W)) - L)[np.newaxis, :])
@@ -524,12 +532,8 @@ class BboxBase(TransformNode):
         """
         # Make sure you have at least the number of dims for self
         # and pad the scales with ones if there isn't enough.
-        extradims = len(self.p0) - (len(args) + 2)
-        if extradims >= 0 :
-            m = np.hstack([mx, my] + list(args) + ([1] * extradims))
-        else :
-            raise ValueError("Unexpected number of dimensions for this Bbox: %d"
-                             % len(self.p0))
+        extradims = max(len(self.p0) - (len(args) + 2), 0)
+        m = np.r_[(mx, my), args, [1] * extradims][:self.p0.shape[0]]
 
         return Bbox([self.p0, self.p0 + self.size * m])
 
@@ -570,7 +574,9 @@ class BboxBase(TransformNode):
         """
         boxes = []
         xf = [0] + list(args) + [1]
-        x0, y0, x1, y1 = self._get_extents()
+        mid = self.p0.shape[0]
+        x0, y0 = self.extents[:2]
+        x1, y1 = self.extents[mid:mid+2]
         w = x1 - x0
         for xf0, xf1 in zip(xf[:-1], xf[1:]):
             boxes.append(Bbox([[x0 + xf0 * w, y0], [x0 + xf1 * w, y1]]))
@@ -586,7 +592,9 @@ class BboxBase(TransformNode):
         """
         boxes = []
         yf = [0] + list(args) + [1]
-        x0, y0, x1, y1 = self._get_extents()
+        mid = self.p0.shape[0]
+        x0, y0 = self.extents[:2]
+        x1, y1 = self.extents[mid:mid+2]
         h = y1 - y0
         for yf0, yf1 in zip(yf[:-1], yf[1:]):
             boxes.append(Bbox([[x0, y0 + yf0 * h], [x1, y0 + yf1 * h]]))
@@ -596,15 +604,25 @@ class BboxBase(TransformNode):
         """
         Count the number of vertices contained in the :class:`Bbox`.
 
-        *vertices* is a NxM Numpy array.
+        *vertices* is a MxN numpy array, where M is the number of
+        vertices, while N is the number of dimensions.
         """
+        vertices = np.asarray(vertices)
         if vertices.size == 0:
             return 0
-        vertices = np.asarray(vertices)
+
         dx0 = np.sign(vertices - self.p0[np.newaxis, :])
         dx1 = np.sign(vertices - self.p1[np.newaxis, :])
 
-        inside = (np.sum(np.abs(dx0 + dx1), axis=0) <= 2)
+        # If a vertex is inside an interval, dx0 and dx1 will have opposing,
+        # signs, the sum of which is zero.  If on a boundary, dx0 and dx1
+        # will be 0 and 1 (or -1).  If outside the boundary, then both dx0
+        # and dx1 will have the same sign np.abs(dx0 + dx1) will be 2.
+        # Therefore, we want to count the number of points for each vertex
+        # where np.abs(dx0 + dx1) is less than 2 (within or on boundary).
+        # With that count, a vertex is within the Bbox if the sum is
+        # equal to the number of dimensions.
+        inside = (np.sum(np.abs(dx0 + dx1) < 2, axis=1) == dx0.shape[1])
         return sum(inside)
 
     def count_overlaps(self, bboxes):
@@ -623,25 +641,20 @@ class BboxBase(TransformNode):
         """
         # Make sure you have at least the number of dims for self
         # and pad the scales with ones if there isn't enough.
-        extradims = len(self.p0) - (len(args) + 2)
-        if extradims >= 0 :
-            s = np.hstack([sx, sy] + list(args) + ([1] * extradims))
-        else :
-            raise ValueError("Unexpected number of dimensions for this Bbox: %d"
-                             % len(self.p0))
-        size = self.size
-        delta = (s * size - size) / 2.0
+        extradims = max(self.p0.shape[0] - (len(args) + 2), 0)
+        s = np.r_[(sx, sy), args, [1] * extradims][:self.p0.shape[0]]
+        delta = (s * self.size - self.size) / 2.0
         a = np.vstack([-delta, delta])
         return Bbox(self.get_points() + a)
 
     def padded(self, p):
         """
-        Return a new :class:`Bbox` that is padded on all four sides by
+        Return a new :class:`Bbox` that is padded on all sides by
         the given value.
         """
         points = self.get_points()
-        pads = np.hstack([-p, p])
-        return Bbox(points + pads[:, np.newaxis])
+        pads = np.vstack([-p, p])
+        return Bbox(points + pads)
 
     def translated(self, tx, ty, *args):
         """
@@ -650,12 +663,8 @@ class BboxBase(TransformNode):
         """
         # Make sure you have at least the number of dims for self
         # and pad the scales with zeros if there isn't enough.
-        extradims = len(self.p0) - (len(args) + 2)
-        if extradims >= 0 :
-            t = np.hstack([tx, ty] + list(args) + ([0] * extradims))
-        else :
-            raise ValueError("Unexpected number of dimensions for this Bbox: %d"
-                             % len(self.p0))
+        extradims = max(self.p0.shape[0] - (len(args) + 2), 0)
+        t = np.r_[(tx, ty), args, [0] * extradims][:self.p0.shape[0]]
         return Bbox(self.get_points() + t[np.newaxis, :])
 
     def corners(self):
@@ -665,8 +674,21 @@ class BboxBase(TransformNode):
         the points (*a*, *b*) and (*c*, *d*), :meth:`corners` returns
         (*a*, *b*), (*a*, *d*), (*c*, *b*) and (*c*, *d*).
         """
-        return np.array(*zip(np.broadcast_arrays(
-                             *np.ix_(*self.get_points().T))))
+        # The following 'magic' works like this:
+        #    1. Take the 2xN array of points and transpose it.
+        #    2. Create N N-D arrays, each containing 2 values,
+        #       oriented along a unique direction.
+        #    3. Broadcast these arrays against each other to
+        #       fill them out.
+        #    5. Use map() and np.ravel() to ravel out each one.
+        #       When viewed in parallel, these arrays has
+        #       every possible combination of the original points.
+        #    6. zipping them and feeding them into np.array
+        #       creates a (2^N)xN array of points representing
+        #       all the corners of the N-D Bbox.
+        return np.array(zip(*map(np.ravel,
+                                 np.broadcast_arrays(
+                                    *np.ix_(*self.get_points().T)))))
 
     # TODO: Generalize this!
     def rotated(self, radians):
@@ -784,28 +806,31 @@ class Bbox(BboxBase):
         """
         self._ignore = value
 
-    # TODO: Need to generalize this!
+    # TODO: We can't generalize this until we can figure a better
+    #       way to handle function args because the following is invalid:
+    #       def update_from_data(self, x, y, *args, ignore=None)
     def update_from_data(self, x, y, ignore=None):
         """
         Update the bounds of the :class:`Bbox` based on the passed in
         data.  After updating, the bounds will have positive *width*
         and *height*; *x0* and *y0* will be the minimal values.
 
-        *x*: a numpy array of *x*-values
+        *x*: a 1-D numpy array (or list) of *x*-values
 
-        *y*: a numpy array of *y*-values
+        *y*: a 1-D numpy array (or list) of *y*-values
 
         *ignore*:
            - when True, ignore the existing bounds of the :class:`Bbox`.
            - when False, include the existing bounds of the :class:`Bbox`.
            - when None, use the last value passed to :meth:`ignore`.
         """
-        warnings.warn(
-            "update_from_data requires a memory copy -- please replace with update_from_data_xy")
-        xy = np.hstack((x.reshape((-1, 1)), y.reshape((-1, 1))))
-        return self.update_from_data_xy(xy, ignore)
+        #warnings.warn(
+        #    "update_from_data requires a memory copy -- please replace with update_from_data_xy")
+        # NOTE: These arrays *must* be 1-D.
+        return self.update_from_data_xy(np.c_[x, y], ignore)
 
     # TODO: Need to generalize this!
+    #       The main problem is function parameter handling.
     def update_from_path(self, path, ignore=None, updatex=True, updatey=True):
         """
         Update the bounds of the :class:`Bbox` based on the passed in
@@ -841,9 +866,11 @@ class Bbox(BboxBase):
                 self._points[:,1] = points[:,1]
                 self._minpos[1] = minpos[1]
 
-
-    # TODO: Do we need to generalize this?
-    def update_from_data_xy(self, xy, ignore=None, updatex=True, updatey=True):
+    # TODO: Need to generalize this, but the function parameter
+    #       handling might prove difficult due to need to support
+    #       python2.4 (i.e., can't put positional args after the
+    #       updatex and updatey kwargs).
+    def update_from_data_xy(self, xy, ignore=None, updatex=True, updatey=True) :
         """
         Update the bounds of the :class:`Bbox` based on the passed in
         data.  After updating, the bounds will have positive *width*
@@ -1175,6 +1202,7 @@ class Transform(TransformNode):
         return Path(self.transform_non_affine(path.vertices), path.codes,
                     path._interpolation_steps)
 
+    # TODO: Generalize this!
     def transform_angles(self, angles, pts, radians=False, pushoff=1e-5):
         """
         Performs transformation on a set of angles anchored at
@@ -1213,7 +1241,7 @@ class Transform(TransformNode):
 
         # Convert to radians if desired
         if not radians:
-            angles = angles / 180.0 * np.pi
+            angles *= (np.pi / 180.0)
 
         # Move a short distance away
         pts2 = pts + pushoff * np.c_[ np.cos(angles), np.sin(angles) ]
@@ -1228,7 +1256,7 @@ class Transform(TransformNode):
 
         # Convert back to degrees if desired
         if not radians:
-            a = a * 180.0 / np.pi
+            a *= (np.pi / 180.0)
 
         return a
 
@@ -1584,7 +1612,7 @@ class Affine2D(Affine2DBase):
         calls to :meth:`rotate`, :meth:`rotate_deg`, :meth:`translate`
         and :meth:`scale`.
         """
-        return self.rotate(degrees*np.pi/180.)
+        return self.rotate(degrees*(np.pi/180.))
 
     def rotate_around(self, x, y, theta):
         """
@@ -1749,13 +1777,13 @@ class BlendedGenericTransform(Transform):
             x_points = x.transform(points)[:, 0:1]
         else:
             x_points = x.transform(points[:, 0])
-            x_points = x_points.reshape((len(x_points), 1))
+            x_points.shape = (-1, 1)
 
         if y.input_dims == 2:
             y_points = y.transform(points)[:, 1:]
         else:
             y_points = y.transform(points[:, 1])
-            y_points = y_points.reshape((len(y_points), 1))
+            y_points.shape = (-1, 1)
 
         if isinstance(x_points, MaskedArray) or isinstance(y_points, MaskedArray):
             return ma.concatenate((x_points, y_points), 1)
