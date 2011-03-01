@@ -403,10 +403,10 @@ class BboxBase(TransformNode):
         Returns True if this bounding box overlaps with the given
         bounding box *other*.
         """
-        ax1 = self._get_min()
-        ax2 = self._get_max()
-        bx1 = other._get_min()
-        bx2 = other._get_max()
+        ax1 = self.min
+        ax2 = self.max
+        bx1 = other.min
+        bx2 = other.max
 
         return not (any(bx2 < ax1) or
                     any(bx1 > ax2))
@@ -446,10 +446,10 @@ class BboxBase(TransformNode):
         Returns True if this bounding box overlaps with the given
         bounding box *other*, but not on its edge alone.
         """
-        ax1 = self._get_min()
-        ax2 = self._get_max()
-        bx1 = other._get_min()
-        bx2 = other._get_max()
+        ax1 = self.min
+        ax2 = self.max
+        bx1 = other.min
+        bx2 = other.max
 
         return not (any(bx2 <= ax1) or
                     any(bx1 >= ax2))
@@ -502,8 +502,8 @@ class BboxBase(TransformNode):
             container = self
         cont_bounds = container.bounds
         cont_mid = int(len(cont_bounds) / 2)
-        l = cont_bounds[:cont_mid]
-        w = cont_bounds[cont_mid:]
+        l = np.array(cont_bounds[:cont_mid])
+        w = np.array(cont_bounds[cont_mid:])
         if isinstance(c, str):
             # TODO: Need to pad this if the others are expecting 3D.
             cx = np.array(self.coefs[c])
@@ -511,9 +511,9 @@ class BboxBase(TransformNode):
             cx = np.array(c)
         bounds = self.bounds
         mid = int(len(bounds) / 2)
-        L = bounds[:mid]
-        W = bounds[mid:]
-        return Bbox(self._points + (l + cx * (w-W)) - L)
+        L = np.array(bounds[:mid])
+        W = np.array(bounds[mid:])
+        return Bbox(self.get_points() + ((l + cx * (w-W)) - L)[np.newaxis, :])
 
     def shrunk(self, mx, my, *args):
         """
@@ -556,8 +556,8 @@ class BboxBase(TransformNode):
         else:
             W = h * fig_aspect/box_aspect
             H = h
-        return Bbox([self._points[0],
-                     self._points[0] + ([W, H] + d.tolist())])
+        return Bbox([self.p0,
+                     self.p0 + ([W, H] + d.tolist())])
 
     # TODO: Need to generalize these...
     def splitx(self, *args):
@@ -601,7 +601,6 @@ class BboxBase(TransformNode):
         if vertices.size == 0:
             return 0
         vertices = np.asarray(vertices)
-        x0, y0, x1, y1 = self._get_extents()
         dx0 = np.sign(vertices - self.p0[np.newaxis, :])
         dx1 = np.sign(vertices - self.p1[np.newaxis, :])
 
@@ -633,7 +632,7 @@ class BboxBase(TransformNode):
         size = self.size
         delta = (s * size - size) / 2.0
         a = np.vstack([-delta, delta])
-        return Bbox(self._points + a)
+        return Bbox(self.get_points() + a)
 
     def padded(self, p):
         """
@@ -641,7 +640,7 @@ class BboxBase(TransformNode):
         the given value.
         """
         points = self.get_points()
-        pads = np.hstack(-p, p)
+        pads = np.hstack([-p, p])
         return Bbox(points + pads[:, np.newaxis])
 
     def translated(self, tx, ty, *args):
@@ -657,7 +656,7 @@ class BboxBase(TransformNode):
         else :
             raise ValueError("Unexpected number of dimensions for this Bbox: %d"
                              % len(self.p0))
-        return Bbox(self._points + t[np.newaxis, :])
+        return Bbox(self.get_points() + t[np.newaxis, :])
 
     def corners(self):
         """
@@ -693,8 +692,8 @@ class BboxBase(TransformNode):
             return bboxes[0]
 
         points = np.array([bbox.get_points() for bbox in bboxes])
-        return Bbox.from_extents(*points[:, 0, :].min(0),
-                                 *points[:, 1, :].max(0)))
+        return Bbox.from_extents(*(points[:, 0, :].min(0).tolist() +
+                                   points[:, 1, :].max(0).tolist()))
 
 
 class Bbox(BboxBase):
@@ -748,9 +747,10 @@ class Bbox(BboxBase):
         *width* and *height* may be negative.
         """
         mid = int(len(args) / 2)
-        return Bbox.from_extents(*args[:mid], *[x0 + width for x0, width
+        return Bbox.from_extents(*(args[:mid] +
+                                   tuple([x0 + width for x0, width
                                                 in zip(args[:mid],
-                                                       args[mid:])])
+                                                       args[mid:])])))
 
     @staticmethod
     def from_extents(*args):
@@ -909,8 +909,8 @@ class Bbox(BboxBase):
 
     def _set_bounds(self, bounds):
         mid = int(len(bounds) / 2)
-        l = bounds[:mid]
-        w = bounds[mid:]
+        l = np.array(bounds[:mid])
+        w = np.array(bounds[mid:])
         points = np.array([l, l+w], np.float_)
         self.set_points(points)
     bounds = property(BboxBase._get_bounds, _set_bounds)
@@ -960,12 +960,10 @@ class Bbox(BboxBase):
 
     def mutatedx(self):
         'return whether the x-limits have changed since init'
-        return (self._points[0,0]!=self._points_orig[0,0] or
-                self._points[1,0]!=self._points_orig[1,0])
+        return np.any(self._points[:,0]!=self._points_orig[:,0])
     def mutatedy(self):
         'return whether the y-limits have changed since init'
-        return (self._points[0,1]!=self._points_orig[0,1] or
-                self._points[1,1]!=self._points_orig[1,1])
+        return np.any(self._points[:,1]!=self._points_orig[:,1])
 
 
 
@@ -980,12 +978,12 @@ class TransformedBbox(BboxBase):
         """
         *bbox*: a child :class:`Bbox`
 
-        *transform*: a 2D :class:`Transform`
+        *transform*: a N-D :class:`Transform`
         """
         assert bbox.is_bbox
         assert isinstance(transform, Transform)
-        assert transform.input_dims == 2
-        assert transform.output_dims == 2
+        assert transform.input_dims == bbox.p0.shape[0]
+        assert transform.output_dims == bbox.p0.shape[0]
 
         BboxBase.__init__(self)
         self._bbox = bbox
@@ -1019,8 +1017,8 @@ class Transform(TransformNode):
     actually perform a transformation.
 
     All non-affine transformations should be subclasses of this class.
-    New affine transformations should be subclasses of
-    :class:`Affine2D`.
+    New affine transformations should be subclasses of classes like
+    :class:`Affine2D` or :class:`Affine3D`.
 
     Subclasses of this class should override the following members (at
     minimum):
@@ -1203,7 +1201,7 @@ class Transform(TransformNode):
         close to *pts*, to find the angle in the transformed system.
         """
         # Must be 2D
-        if self.input_dims <> 2 or self.output_dims <> 2:
+        if self.input_dims != 2 or self.output_dims != 2:
             raise NotImplementedError('Only defined in 2D')
 
         # pts must be array with 2 columns for x,y
@@ -1211,7 +1209,7 @@ class Transform(TransformNode):
 
         # angles must be a column vector and have same number of
         # rows as pts
-        assert np.prod(angles.shape) == angles.shape[0] == pts.shape[0]
+        assert angles.size == angles.shape[0] == pts.shape[0]
 
         # Convert to radians if desired
         if not radians:
