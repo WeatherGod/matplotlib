@@ -227,8 +227,7 @@ class BboxBase(TransformNode):
             if ma.isMaskedArray(points):
                 warnings.warn("Bbox bounds are a masked array.")
             points = np.asarray(points)
-            if (points[1,0] - points[0,0] == 0 or
-                points[1,1] - points[0,1] == 0):
+            if np.any((points[1] - points[0]) == 0) :
                 warnings.warn("Singular Bbox.")
         _check = staticmethod(_check)
 
@@ -242,9 +241,10 @@ class BboxBase(TransformNode):
     def is_unit(self):
         """
         Returns True if the :class:`Bbox` is the unit bounding box
-        from (0, 0) to (1, 1).
+        from the origin to the far corner (e.g., (0, 0) to (1, 1)
+        for a 2D BBox).
         """
-        return list(self.get_points().flatten()) == [0., 0., 1., 1.]
+        return all(self.p0 == 0.) and all(self.p1 == 1.)
 
     def _get_x0(self):
         return self.get_points()[0, 0]
@@ -309,15 +309,13 @@ class BboxBase(TransformNode):
         (property) :attr:`ymax` is the top edge of the bounding box.""")
 
     def _get_min(self):
-        return [min(self.get_points()[:, 0]),
-                min(self.get_points()[:, 1])]
+        return self.get_points().min(0)
     min = property(_get_min, None, None, """
         (property) :attr:`min` is the bottom-left corner of the bounding
         box.""")
 
     def _get_max(self):
-        return [max(self.get_points()[:, 0]),
-                max(self.get_points()[:, 1])]
+        return self.get_points().max(0)
     max = property(_get_max, None, None, """
         (property) :attr:`max` is the top-right corner of the bounding box.""")
 
@@ -357,8 +355,7 @@ class BboxBase(TransformNode):
         in the same way as :attr:`width` and :attr:`height`.""")
 
     def _get_bounds(self):
-        x0, y0, x1, y1 = self.get_points().flatten()
-        return (x0, y0, x1 - x0, y1 - y0)
+        return self.p0.tolist() + (self.p1 - self.p0).tolist()
     bounds = property(_get_bounds, None, None, """
         (property) Returns (:attr:`x0`, :attr:`y0`, :attr:`width`,
         :attr:`height`).""")
@@ -371,25 +368,28 @@ class BboxBase(TransformNode):
     def get_points(self):
         return NotImplementedError()
 
+    @staticmethod
+    def _contains(interval, x) :
+        """
+        Returns True if *x* is between or equal to *interval*.
+        """
+        return ((interval[0] < interval[1] and
+                 (x >= interval[0] and x <= interval[1])) or
+                (x >= interval[1] and x <= interval[0]))
+
     def containsx(self, x):
         """
         Returns True if *x* is between or equal to :attr:`x0` and
         :attr:`x1`.
         """
-        x0, x1 = self.intervalx
-        return ((x0 < x1
-                 and (x >= x0 and x <= x1))
-                or (x >= x1 and x <= x0))
+        return all(_contains(self.intervalx, x))
 
     def containsy(self, y):
         """
         Returns True if *y* is between or equal to :attr:`y0` and
         :attr:`y1`.
         """
-        y0, y1 = self.intervaly
-        return ((y0 < y1
-                 and (y >= y0 and y <= y1))
-                or (y >= y1 and y <= y0))
+        return all(_contains(self.intervaly, y))
 
     def contains(self, x, y):
         """
@@ -403,72 +403,56 @@ class BboxBase(TransformNode):
         Returns True if this bounding box overlaps with the given
         bounding box *other*.
         """
-        ax1, ay1, ax2, ay2 = self._get_extents()
-        bx1, by1, bx2, by2 = other._get_extents()
+        ax1 = self._get_min()
+        ax2 = self._get_max()
+        bx1 = other._get_min()
+        bx2 = other._get_max()
 
-        if ax2 < ax1:
-            ax2, ax1 = ax1, ax2
-        if ay2 < ay1:
-            ay2, ay1 = ay1, ay2
-        if bx2 < bx1:
-            bx2, bx1 = bx1, bx2
-        if by2 < by1:
-            by2, by1 = by1, by2
+        return not (any(bx2 < ax1) or
+                    any(bx1 > ax2))
 
-        return not ((bx2 < ax1) or
-                    (by2 < ay1) or
-                    (bx1 > ax2) or
-                    (by1 > ay2))
+    @staticmethod
+    def _fully_contains(interval, x) :
+        """
+        Returns True if *x* is between but not equal to *interval*.
+        """
+        return ((interval[0] < interval[1] and
+                 (x > interval[0] and x < interval[1])) or
+                (x > interval[1] and x < interval[0]))
 
     def fully_containsx(self, x):
         """
         Returns True if *x* is between but not equal to :attr:`x0` and
         :attr:`x1`.
         """
-        x0, x1 = self.intervalx
-        return ((x0 < x1
-                 and (x > x0 and x < x1))
-                or (x > x1 and x < x0))
+        return all(_fully_contains(self.intervalx, x))
 
     def fully_containsy(self, y):
         """
         Returns True if *y* is between but not equal to :attr:`y0` and
         :attr:`y1`.
         """
-        y0, y1 = self.intervaly
-        return ((y0 < y1
-                 and (x > y0 and x < y1))
-                or (x > y1 and x < y0))
+        return all(_fully_contains(self.intervaly, y))
 
     def fully_contains(self, x, y):
         """
         Returns True if (*x*, *y*) is a coordinate inside the bounding
         box, but not on its edge.
         """
-        return self.fully_containsx(x) \
-            and self.fully_containsy(y)
+        return self.fully_containsx(x) and self.fully_containsy(y)
 
     def fully_overlaps(self, other):
         """
         Returns True if this bounding box overlaps with the given
         bounding box *other*, but not on its edge alone.
         """
-        ax1, ay1, ax2, ay2 = self._get_extents()
-        bx1, by1, bx2, by2 = other._get_extents()
+        ax1 = self._get_min()
+        ax2 = self._get_max()
+        bx1 = other._get_min()
+        bx2 = other._get_max()
 
-        if ax2 < ax1:
-            ax2, ax1 = ax1, ax2
-        if ay2 < ay1:
-            ay2, ay1 = ay1, ay2
-        if bx2 < bx1:
-            bx2, bx1 = bx1, bx2
-        if by2 < by1:
-            by2, by1 = by1, by2
-
-        return not ((bx2 <= ax1) or
-                    (by2 <= ay1) or
-                    (bx1 >= ax2) or
-                    (by1 >= ay2))
+        return not (any(bx2 <= ax1) or
+                    any(bx1 >= ax2))
 
     def transformed(self, transform):
         """
@@ -516,26 +500,38 @@ class BboxBase(TransformNode):
         """
         if container is None:
             container = self
-        l, b, w, h = container.bounds
+        cont_bounds = container.bounds
+        cont_mid = int(len(cont_bounds) / 2)
+        l = cont_bounds[:cont_mid]
+        w = cont_bounds[cont_mid:]
         if isinstance(c, str):
-            cx, cy = self.coefs[c]
+            # TODO: Need to pad this if the others are expecting 3D.
+            cx = np.array(self.coefs[c])
         else:
-            cx, cy = c
-        L, B, W, H = self.bounds
-        return Bbox(self._points +
-                    [(l + cx * (w-W)) - L,
-                     (b + cy * (h-H)) - B])
+            cx = np.array(c)
+        bounds = self.bounds
+        mid = int(len(bounds) / 2)
+        L = bounds[:mid]
+        W = bounds[mid:]
+        return Bbox(self._points + (l + cx * (w-W)) - L)
 
-    def shrunk(self, mx, my):
+    def shrunk(self, mx, my, *args):
         """
         Return a copy of the :class:`Bbox`, shrunk by the factor *mx*
         in the *x* direction and the factor *my* in the *y* direction.
         The lower left corner of the box remains unchanged.  Normally
         *mx* and *my* will be less than 1, but this is not enforced.
         """
-        w, h = self.size
-        return Bbox([self._points[0],
-                    self._points[0] + [mx * w, my * h]])
+        # Make sure you have at least the number of dims for self
+        # and pad the scales with ones if there isn't enough.
+        extradims = len(self.p0) - (len(args) + 2)
+        if extradims >= 0 :
+            m = np.hstack([mx, my] + list(args) + ([1] * extradims))
+        else :
+            raise ValueError("Unexpected number of dimensions for this Bbox: %d"
+                             % len(self.p0))
+
+        return Bbox([self.p0, self.p0 + self.size * m])
 
     def shrunk_to_aspect(self, box_aspect, container = None, fig_aspect = 1.0):
         """
@@ -550,7 +546,10 @@ class BboxBase(TransformNode):
         assert box_aspect > 0 and fig_aspect > 0
         if container is None:
             container = self
-        w, h = container.size
+        w, h = container.size[0:2]
+        # we will only shrink for the first two dims
+        # all other dims are left alone
+        d = container.size[2:]
         H = w * box_aspect/fig_aspect
         if H <= h:
             W = w
@@ -558,8 +557,9 @@ class BboxBase(TransformNode):
             W = h * fig_aspect/box_aspect
             H = h
         return Bbox([self._points[0],
-                     self._points[0] + (W, H)])
+                     self._points[0] + ([W, H] + d.tolist())])
 
+    # TODO: Need to generalize these...
     def splitx(self, *args):
         """
         e.g., ``bbox.splitx(f1, f2, ...)``
@@ -596,18 +596,17 @@ class BboxBase(TransformNode):
         """
         Count the number of vertices contained in the :class:`Bbox`.
 
-        *vertices* is a Nx2 Numpy array.
+        *vertices* is a NxM Numpy array.
         """
-        if len(vertices) == 0:
+        if vertices.size == 0:
             return 0
         vertices = np.asarray(vertices)
         x0, y0, x1, y1 = self._get_extents()
-        dx0 = np.sign(vertices[:, 0] - x0)
-        dy0 = np.sign(vertices[:, 1] - y0)
-        dx1 = np.sign(vertices[:, 0] - x1)
-        dy1 = np.sign(vertices[:, 1] - y1)
-        inside = (abs(dx0 + dx1) + abs(dy0 + dy1)) <= 2
-        return np.sum(inside)
+        dx0 = np.sign(vertices - self.p0[np.newaxis, :])
+        dx1 = np.sign(vertices - self.p1[np.newaxis, :])
+
+        inside = (np.sum(np.abs(dx0 + dx1), axis=0) <= 2)
+        return sum(inside)
 
     def count_overlaps(self, bboxes):
         """
@@ -617,17 +616,23 @@ class BboxBase(TransformNode):
         """
         return count_bboxes_overlapping_bbox(self, bboxes)
 
-    def expanded(self, sw, sh):
+    def expanded(self, sw, sh, *args):
         """
         Return a new :class:`Bbox` which is this :class:`Bbox`
         expanded around its center by the given factors *sw* and
         *sh*.
         """
-        width = self.width
-        height = self.height
-        deltaw = (sw * width - width) / 2.0
-        deltah = (sh * height - height) / 2.0
-        a = np.array([[-deltaw, -deltah], [deltaw, deltah]])
+        # Make sure you have at least the number of dims for self
+        # and pad the scales with ones if there isn't enough.
+        extradims = len(self.p0) - (len(args) + 2)
+        if extradims >= 0 :
+            s = np.hstack([sx, sy] + list(args) + ([1] * extradims))
+        else :
+            raise ValueError("Unexpected number of dimensions for this Bbox: %d"
+                             % len(self.p0))
+        size = self.size
+        delta = (s * size - size) / 2.0
+        a = np.vstack([-delta, delta])
         return Bbox(self._points + a)
 
     def padded(self, p):
@@ -636,14 +641,23 @@ class BboxBase(TransformNode):
         the given value.
         """
         points = self.get_points()
-        return Bbox(points + [[-p, -p], [p, p]])
+        pads = np.hstack(-p, p)
+        return Bbox(points + pads[:, np.newaxis])
 
-    def translated(self, tx, ty):
+    def translated(self, tx, ty, *args):
         """
         Return a copy of the :class:`Bbox`, statically translated by
         *tx* and *ty*.
         """
-        return Bbox(self._points + (tx, ty))
+        # Make sure you have at least the number of dims for self
+        # and pad the scales with zeros if there isn't enough.
+        extradims = len(self.p0) - (len(args) + 2)
+        if extradims >= 0 :
+            t = np.hstack([tx, ty] + list(args) + ([0] * extradims))
+        else :
+            raise ValueError("Unexpected number of dimensions for this Bbox: %d"
+                             % len(self.p0))
+        return Bbox(self._points + t[np.newaxis, :])
 
     def corners(self):
         """
@@ -652,9 +666,10 @@ class BboxBase(TransformNode):
         the points (*a*, *b*) and (*c*, *d*), :meth:`corners` returns
         (*a*, *b*), (*a*, *d*), (*c*, *b*) and (*c*, *d*).
         """
-        l, b, r, t = self.get_points().flatten()
-        return np.array([[l, b], [l, t], [r, b], [r, t]])
+        return np.array(*zip(np.broadcast_arrays(
+                             *np.ix_(*self.get_points().T))))
 
+    # TODO: Generalize this!
     def rotated(self, radians):
         """
         Return a new bounding box that bounds a rotated version of
@@ -677,21 +692,9 @@ class BboxBase(TransformNode):
         if len(bboxes) == 1:
             return bboxes[0]
 
-        x0 = np.inf
-        y0 = np.inf
-        x1 = -np.inf
-        y1 = -np.inf
-
-        for bbox in bboxes:
-            points = bbox.get_points()
-            xs = points[:, 0]
-            ys = points[:, 1]
-            x0 = min(x0, np.min(xs))
-            y0 = min(y0, np.min(ys))
-            x1 = max(x1, np.max(xs))
-            y1 = max(y1, np.max(ys))
-
-        return Bbox.from_extents(x0, y0, x1, y1)
+        points = np.array([bbox.get_points() for bbox in bboxes])
+        return Bbox.from_extents(*points[:, 0, :].min(0),
+                                 *points[:, 1, :].max(0)))
 
 
 class Bbox(BboxBase):
@@ -701,7 +704,7 @@ class Bbox(BboxBase):
 
     def __init__(self, points):
         """
-        *points*: a 2x2 numpy array of the form [[x0, y0], [x1, y1]]
+        *points*: a 2xM numpy array of the form [[x0, y0], [x1, y1]]
 
         If you need to create a :class:`Bbox` object from another form
         of data, consider the static methods :meth:`unit`,
@@ -709,12 +712,14 @@ class Bbox(BboxBase):
         """
         BboxBase.__init__(self)
         self._points = np.asarray(points, np.float_)
-        self._minpos = np.array([0.0000001, 0.0000001])
+        self._points.shape = (2, -1)
+        self._minpos = np.array([0.0000001] * self._points.shape[1])
         self._ignore = True
         # it is helpful in some contexts to know if the bbox is a
         # default or has been mutated; we store the orig points to
         # support the mutated methods
         self._points_orig = self._points.copy()
+
     if DEBUG:
         ___init__ = __init__
         def __init__(self, points):
@@ -735,14 +740,17 @@ class Bbox(BboxBase):
         return Bbox(Bbox._unit_values.copy())
 
     @staticmethod
-    def from_bounds(x0, y0, width, height):
+    def from_bounds(*args):
         """
         (staticmethod) Create a new :class:`Bbox` from *x0*, *y0*,
         *width* and *height*.
 
         *width* and *height* may be negative.
         """
-        return Bbox.from_extents(x0, y0, x0 + width, y0 + height)
+        mid = int(len(args) / 2)
+        return Bbox.from_extents(*args[:mid], *[x0 + width for x0, width
+                                                in zip(args[:mid],
+                                                       args[mid:])])
 
     @staticmethod
     def from_extents(*args):
@@ -752,7 +760,8 @@ class Bbox(BboxBase):
 
         The *y*-axis increases upwards.
         """
-        points = np.array(args, dtype=np.float_).reshape(2, 2)
+        points = np.array(args, dtype=np.float_)
+        points.shape = (2, -1)
         return Bbox(points)
 
     def __repr__(self):
@@ -775,6 +784,7 @@ class Bbox(BboxBase):
         """
         self._ignore = value
 
+    # TODO: Need to generalize this!
     def update_from_data(self, x, y, ignore=None):
         """
         Update the bounds of the :class:`Bbox` based on the passed in
@@ -792,9 +802,10 @@ class Bbox(BboxBase):
         """
         warnings.warn(
             "update_from_data requires a memory copy -- please replace with update_from_data_xy")
-        xy = np.hstack((x.reshape((len(x), 1)), y.reshape((len(y), 1))))
+        xy = np.hstack((x.reshape((-1, 1)), y.reshape((-1, 1))))
         return self.update_from_data_xy(xy, ignore)
 
+    # TODO: Need to generalize this!
     def update_from_path(self, path, ignore=None, updatex=True, updatey=True):
         """
         Update the bounds of the :class:`Bbox` based on the passed in
@@ -831,6 +842,7 @@ class Bbox(BboxBase):
                 self._minpos[1] = minpos[1]
 
 
+    # TODO: Do we need to generalize this?
     def update_from_data_xy(self, xy, ignore=None, updatex=True, updatey=True):
         """
         Update the bounds of the :class:`Bbox` based on the passed in
@@ -848,7 +860,7 @@ class Bbox(BboxBase):
 
         *updatey*: when True, update the y values
         """
-        if len(xy) == 0:
+        if xy.size == 0:
             return
 
         path = Path(xy)
@@ -896,11 +908,11 @@ class Bbox(BboxBase):
     intervaly = property(BboxBase._get_intervaly, _set_intervaly)
 
     def _set_bounds(self, bounds):
-        l, b, w, h = bounds
-        points = np.array([[l, b], [l+w, b+h]], np.float_)
-        if np.any(self._points != points):
-            self._points = points
-            self.invalidate()
+        mid = int(len(bounds) / 2)
+        l = bounds[:mid]
+        w = bounds[mid:]
+        points = np.array([l, l+w], np.float_)
+        self.set_points(points)
     bounds = property(BboxBase._get_bounds, _set_bounds)
 
     def _get_minpos(self):
@@ -944,7 +956,7 @@ class Bbox(BboxBase):
 
     def mutated(self):
         'return whether the bbox has changed since init'
-        return self.mutatedx() or self.mutatedy()
+        return np.any(self._points != self._points_orig)
 
     def mutatedx(self):
         'return whether the x-limits have changed since init'
