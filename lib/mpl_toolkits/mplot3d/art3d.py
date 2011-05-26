@@ -125,6 +125,28 @@ def line_2d_to_3d(line, zs=0, zdir='z'):
     line.__class__ = Line3D
     line.set_3d_properties(zs, zdir)
 
+class Path3D(mpath.Path) :
+    """
+    3D Path object
+    """
+    
+    def __init__(self, vertices, *args, **kwargs) :
+        """
+        Positional and keyword arguments are passed onto
+        :func:`matplotlib.lines.Lines2D`.
+        """
+        mpath.Path.__init__(self, [], *args, **kwargs)
+        self._verts3d = vertices
+
+    def set_3d_properties(self, zs=0, zdir='z') :
+        pass
+
+    def draw(self, renderer) :
+        xs3d, ys3d, zs3d = self._verts3d
+        xs, ys, zs, proj3d.proj_transform(xs3d, ys3d, zs3d, renderer.M)
+        #self.set_data(xs, ys)
+        mpath.Path.draw(self, renderer)
+
 def path_to_3d_segment(path, zs=0, zdir='z'):
     '''Convert a path to a 3D segment.'''
 
