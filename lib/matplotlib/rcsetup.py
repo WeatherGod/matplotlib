@@ -206,6 +206,26 @@ def validate_colorlist(s):
         assert type(s) in [list, tuple]
         return [validate_color(c) for c in s]
 
+def validate_style(s):
+    style_map = {'solid':'-',
+                 'dashed':'--',
+                 'dash-dot':'-.',
+                 'dotted':':'}
+    if s in style_map :
+        return style_map[s]
+    if s in style_map.values() :
+        return s
+
+    raise ValueError('%s does not look like a linestyle arg' % s)
+
+def validate_stylelist(s):
+    'return a list of linestyles'
+    if type(s) is str:
+        return [validate_style(y.strip()) for y in s.split(',')]
+    else:
+        assert type(s) in [list,tuple]
+        return [validate_style(y) for y in s]
+
 def validate_stringlist(s):
     'return a list'
     if type(s) is str:
@@ -455,6 +475,12 @@ defaultParams = {
     'axes.color_cycle'      : [['b','g','r','c','m','y','k'],
                                     validate_colorlist], # cycle of plot
                                                          # line colors
+    'color.cycle'           : [True, validate_bool], # cycle colors or not
+
+    'axes.style_cycle'      : [['-','--','-.',':'],
+                                    validate_stylelist], # cycle of plot
+                                                         # linestyles
+    'style.cycle'           : [False, validate_bool], # cycle styles or not
 
     'polaraxes.grid'        : [True, validate_bool],   # display polar grid or not
     'axes3d.grid'           : [True, validate_bool],   # display 3d grid

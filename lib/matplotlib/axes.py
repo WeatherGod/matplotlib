@@ -170,11 +170,29 @@ class _process_plot_var_args:
         self.axes = axes
         self.command = command
         self.set_color_cycle()
+        self.set_style_cycle()
 
     def set_color_cycle(self, clist=None):
         if clist is None:
             clist = rcParams['axes.color_cycle']
+        if not rcParams['color.cycle']:
+            # No cycling is desired, so just use the default (first)
+            # value in the list to get the desired behavior.
+            clist = clist[:1]
         self.color_cycle = itertools.cycle(clist)
+
+    def set_style_cycle(self, slist=None):
+        if slist is None:
+            slist = rcParams['axes.style_cycle']
+
+        # TODO: If the user calls this function with
+        # a list, should it override a False value for
+        # rcParams['cycle.style']?
+        if not rcParams['style.cycle']:
+            # No cycling is wanted, so just use the default (first)
+            # value in the list to get the desired behavior.
+            slist = slist[:1]
+        self.style_cycle = itertools.cycle(slist)
 
     def __call__(self, *args, **kwargs):
 
@@ -253,6 +271,9 @@ class _process_plot_var_args:
             kw['color'] = self.color_cycle.next()
             # (can't use setdefault because it always evaluates
             # its second argument)
+        if not 'linestyle' in kw and not 'linestyle' in kwargs.keys():
+            kw['linestyle'] = self.style_cycle.next()
+
         seg = mlines.Line2D(x, y,
                      axes=self.axes,
                      **kw
