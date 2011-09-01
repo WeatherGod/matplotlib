@@ -5126,14 +5126,14 @@ class Axes(martist.Artist):
 
     @docstring.dedent_interpd
     def errorbar(self, x, y, yerr=None, xerr=None,
-                 fmt='-', ecolor=None, elinewidth=None, capsize=3,
+                 ecolor=None, elinewidth=None, capsize=3,
                  barsabove=False, lolims=False, uplims=False,
                  xlolims=False, xuplims=False, **kwargs):
         """
         call signature::
 
           errorbar(x, y, yerr=None, xerr=None,
-                   fmt='-', ecolor=None, elinewidth=None, capsize=3,
+                   ecolor=None, elinewidth=None, capsize=3,
                    barsabove=False, lolims=False, uplims=False,
                    xlolims=False, xuplims=False)
 
@@ -5153,7 +5153,7 @@ class Axes(martist.Artist):
             If a sequence of shape 2xN, errorbars are drawn at -row1 and
             +row2
 
-          *fmt*: '-'
+          *fmt*:
             The plot format symbol. If *fmt* is *None*, only the
             errorbars are plotted.  This is used for adding
             errorbars to a bar plot, for example.
@@ -5217,6 +5217,11 @@ class Axes(martist.Artist):
         self._hold = True
 
         label = kwargs.pop("label", None)
+
+        if 'fmt' not in kwargs :
+            fmt = self._get_lines.style_cycle.next()
+        else :
+            fmt = kwargs.pop('fmt')
 
         # make sure all the args are iterable; use lists not arrays to
         # preserve units
