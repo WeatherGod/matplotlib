@@ -3,14 +3,15 @@ A Cairo backend for matplotlib
 Author: Steve Chaplin
 
 Cairo is a vector graphics library with cross-device output support.
-Features of Cairo:
- * anti-aliasing
- * alpha channel
- * saves image files as PNG, PostScript, PDF
+Features of Cairo
+  * anti-aliasing
+  * alpha channel
+  * saves image files as PNG, PostScript, PDF
 
 http://cairographics.org
-Requires (in order, all available from Cairo website):
-    cairo, pycairo
+Requires (in order, all available from Cairo website)
+  * cairo
+  * pycairo
 
 Naming Conventions
   * classes MixedUpperCase

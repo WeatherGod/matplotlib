@@ -93,11 +93,11 @@ class TimerGTK(TimerBase):
     Subclass of :class:`backend_bases.TimerBase` that uses GTK for timer events.
 
     Attributes:
-    * interval: The time between timer events in milliseconds. Default
+      interval: The time between timer events in milliseconds. Default
         is 1000 ms.
-    * single_shot: Boolean flag indicating whether this timer should
+      single_shot: Boolean flag indicating whether this timer should
         operate as single shot (run once and then stop). Defaults to False.
-    * callbacks: Stores list of (func, args) tuples that will be called
+      callbacks: Stores list of (func, args) tuples that will be called
         upon timer events. This list can be manipulated directly, or the
         functions add_callback and remove_callback can be used.
     '''
