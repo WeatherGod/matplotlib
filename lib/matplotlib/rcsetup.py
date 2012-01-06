@@ -218,6 +218,7 @@ def validate_style(s):
 
     raise ValueError('%s does not look like a linestyle arg' % s)
 
+
 def validate_stylelist(s):
     'return a list of linestyles'
     if type(s) is str:
@@ -225,6 +226,21 @@ def validate_stylelist(s):
     else:
         assert type(s) in [list,tuple]
         return [validate_style(y) for y in s]
+
+def validate_hatch(s) :
+    hatches = (None, '/', '\\', '|', '-', '+', 'x', 'o', 'O', '.', '*')
+    if all([c in hatch_list for c in s]) :
+        return s
+
+    raise ValueError('%s does not look like a hatch arg' % s)
+
+def validate_hatchlist(s) :
+    'return a list of hatches'
+    if type(s) is str :
+        return [validate_hatch(y.strip()) for y in s.split(',')]
+    else :
+        assert type(s) in [list,tuple]
+        return [validate_hatch(y) for y in s]
 
 def validate_stringlist(s):
     'return a list'
@@ -481,6 +497,11 @@ defaultParams = {
                                     validate_stylelist], # cycle of plot
                                                          # linestyles
     'style.cycle'           : [False, validate_bool], # cycle styles or not
+    'axes.marker_cycle'     : [['o', '.', '+', 's', '*'], validate_stringlist],
+    'cycle.marker'          : [False, validate_bool],
+    'axes.hatch_cycle'      : [[None, '/', '\\', 'o', '*'],
+                               validate_hatchlist],
+    'cycle.hatch'           : [False, validate_bool],
 
     'polaraxes.grid'        : [True, validate_bool],   # display polar grid or not
     'axes3d.grid'           : [True, validate_bool],   # display 3d grid

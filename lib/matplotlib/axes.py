@@ -171,6 +171,8 @@ class _process_plot_var_args:
         self.command = command
         self.set_color_cycle()
         self.set_style_cycle()
+        self.set_hatch_cycle()
+        self.set_marker_cycle()
 
     def set_color_cycle(self, clist=None):
         if clist is None:
@@ -193,6 +195,34 @@ class _process_plot_var_args:
             # value in the list to get the desired behavior.
             slist = slist[:1]
         self.style_cycle = itertools.cycle(slist)
+
+    def set_hatch_cycle(self, hlist=None):
+        if hlist is None:
+            hlist = rcParams['axes.hatch_cycle']
+
+        # TODO: If the user calls this function with
+        # a list, should it override a False value for
+        # rcParams['cycle.hatch']?
+        if not rcParams['cycle.hatch']:
+            # No cycling is wanted, so just use the default (first)
+            # value in the list to get the desired behavior.
+            hlist = hlist[:1]
+        self.hatch_cycle = itertools.cycle(hlist)
+
+    def set_marker_cycle(self, mlist=None):
+        if mlist is None:
+            mlist = rcParams['axes.marker_cycle']
+
+        # TODO: If the user calls this function with
+        # a list, should it override a False value for
+        # rcParams['cycle.marker']?
+        if not rcParams['cycle.marker']:
+            # No cycling is wanted, so just use the default (first)
+            # value in the list to get the desired behavior.
+            mlist = mlist[:1]
+        self.marker_cycle = itertools.cycle(mlist)
+
+
 
     def __call__(self, *args, **kwargs):
 
@@ -4611,7 +4641,12 @@ class Axes(martist.Artist):
         .. plot:: mpl_examples/pylab_examples/bar_stacked.py
         """
         if not self._hold: self.cla()
-        color = kwargs.pop('color', None)
+        color = (next(self._get_patches_for_fill.color_cycle) if
+                 "color" not in kwargs else
+                 kwargs.pop('color'))
+        hatch = (next(self._get_patches_for_fill.hatch_cycle) if
+                 "hatch" not in kwargs else
+                 kwargs.pop('hatch'))
         edgecolor = kwargs.pop('edgecolor', None)
         linewidth = kwargs.pop('linewidth', None)
 
@@ -4644,6 +4679,7 @@ class Axes(martist.Artist):
         _bottom = bottom
         bottom = make_iterable(bottom)
         linewidth = make_iterable(linewidth)
+        hatch = make_iterable(hatch)
 
         adjust_ylim = False
         adjust_xlim = False
@@ -4684,6 +4720,9 @@ class Axes(martist.Artist):
 
         if len(linewidth) < nbars:
             linewidth *= nbars
+
+        if len(hatch) < nbars :
+            hatch *= nbars
 
         if color is None:
             color = [None] * nbars
@@ -4740,8 +4779,9 @@ class Axes(martist.Artist):
         else:
             raise ValueError, 'invalid alignment: %s' % align
 
-        args = zip(left, bottom, width, height, color, edgecolor, linewidth)
-        for l, b, w, h, c, e, lw in args:
+        args = zip(left, bottom, width, height,
+                   color, edgecolor, linewidth, hatch)
+        for l, b, w, h, c, e, lw, htch in args:
             if h<0:
                 b += h
                 h = abs(h)
@@ -4753,6 +4793,7 @@ class Axes(martist.Artist):
                 facecolor=c,
                 edgecolor=e,
                 linewidth=lw,
+                hatch=htch,
                 label='_nolegend_'
                 )
             r.update(kwargs)
@@ -5018,6 +5059,10 @@ class Axes(martist.Artist):
           *shadow*: [ False | True ]
             Draw a shadow beneath the pie.
 
+          *hatches*: [ None | hatch sequence ]
+            A sequence of matplotlib hatch specifications which the pie chart
+            will cycle.
+
         The pie chart will probably look best if the figure and axes are
         square.  Eg.::
 
@@ -5050,7 +5095,15 @@ class Axes(martist.Artist):
         if explode is None: explode = [0]*len(x)
         assert(len(x)==len(labels))
         assert(len(x)==len(explode))
-        if colors is None: colors = ('b', 'g', 'r', 'c', 'm', 'y', 'k', 'w')
+        if colors is None :
+            colors = self._get_patches_for_fill.color_cycle
+            #('b', 'g', 'r', 'c', 'm', 'y', 'k', 'w')
+        elif not isinstance(colors, itertools.cycle) :
+            colors = itertools.cycle(colors)
+        if hatches is None :
+            hatches = self._get_patches_for_fill.hatch_cycle
+        elif not isinstance(hatches, itertools.cycle) :
+            hatches = itertools.cycle(hatches)
 
 
         center = 0,0
@@ -5068,7 +5121,8 @@ class Axes(martist.Artist):
             y += expl*math.sin(thetam)
 
             w = mpatches.Wedge((x,y), radius, 360.*theta1, 360.*theta2,
-                      facecolor=colors[i%len(colors)])
+                      facecolor=next(colors),
+                      hatch=next(hatches))
             slices.append(w)
             self.add_patch(w)
             w.set_label(label)
@@ -5662,14 +5716,14 @@ class Axes(martist.Artist):
                     medians=medians, fliers=fliers)
 
     @docstring.dedent_interpd
-    def scatter(self, x, y, s=20, c='b', marker='o', cmap=None, norm=None,
+    def scatter(self, x, y, s=20, cmap=None, norm=None,
                     vmin=None, vmax=None, alpha=None, linewidths=None,
                     faceted=True, verts=None,
                     **kwargs):
         """
         call signatures::
 
-          scatter(x, y, s=20, c='b', marker='o', cmap=None, norm=None,
+          scatter(x, y, s=20, c=None, marker=None, cmap=None, norm=None,
                   vmin=None, vmax=None, alpha=None, linewidths=None,
                   verts=None, **kwargs)
 
@@ -5751,6 +5805,13 @@ class Axes(martist.Artist):
         """
 
         if not self._hold: self.cla()
+
+        c = (self._get_lines.color_cycle.next() if 'c' in kwargs else
+             kwargs.pop('c'))
+        marker = (self._get_lines.marker_cycle.next() if
+                  'marker' in kwargs else
+                  kwargs.pop('marker'))
+
 
         self._process_unit_info(xdata=x, ydata=y, kwargs=kwargs)
         x = self.convert_xunits(x)
@@ -7627,6 +7688,15 @@ class Axes(martist.Artist):
             if len(color) != nx:
                 raise ValueError("color kwarg must have one color per dataset")
 
+        if 'hatch' not in kwargs :
+            hatch = [next(self._get_lines.hatch_cycle) for i in xrange(nx)]
+        else :
+            hatch = kwargs.pop('hatch')
+            if not iterable(hatch) :
+                hatch = [hatch]
+            if len(hatch) != nx :
+                raise ValueError("hatch kwarg must have one hatch per dataset")
+
         # We need to do to 'weights' what was done to 'x'
         if weights is not None:
             if isinstance(weights, np.ndarray) or not iterable(weights[0]) :
@@ -7739,10 +7809,10 @@ class Axes(martist.Artist):
             else:  # orientation == 'vertical'
                 _barfunc = self.bar
 
-            for m, c in zip(n, color):
+            for m, c, h in zip(n, color, hatch):
                 patch = _barfunc(bins[:-1]+boffset, m, width, bottom,
                                   align='center', log=log,
-                                  color=c)
+                                  color=c, hatch=h)
                 patches.append(patch)
                 if stacked:
                     if bottom is None:
@@ -7772,7 +7842,7 @@ class Axes(martist.Artist):
 
             fill = (histtype == 'stepfilled')
 
-            for m, c in zip(n, color):
+            for m, c, h in zip(n, color, hatch):
                 y[1:-1:2], y[2::2] = m, m
                 if log:
                     y[y<minimum]=minimum
@@ -7781,10 +7851,10 @@ class Axes(martist.Artist):
 
                 if fill:
                     patches.append( self.fill(x, y,
-                        closed=False, facecolor=c) )
+                        closed=False, facecolor=c, hatch=h) )
                 else:
                     patches.append( self.fill(x, y,
-                        closed=False, edgecolor=c, fill=False) )
+                        closed=False, edgecolor=c, hatch=h, fill=False) )
 
             # adopted from adjust_x/ylim part of the bar method
             if orientation == 'horizontal':
