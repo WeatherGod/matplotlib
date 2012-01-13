@@ -313,6 +313,12 @@ def deprecate_svg_embed_char_paths(value):
 
 validate_svg_fonttype = ValidateInStrings('fonttype', ['none', 'path', 'svgfont'])
 
+validate_movie_writer = ValidateInStrings('animation.writer',
+    ['ffmpeg', 'ffmpeg_file', 'mencoder', 'mencoder_file'])
+
+validate_movie_frame_fmt = ValidateInStrings('animation.frame_format',
+    ['png', 'jpeg', 'tiff', 'raw', 'rgba'])
+
 class ValidateInterval:
     """
     Value must be in interval
@@ -576,6 +582,15 @@ defaultParams = {
     'examples.download' : [True, validate_bool],
     'examples.directory' : ['', str],
 
+    # Animation settings
+    'animation.writer' : ['ffmpeg', validate_movie_writer],
+    'animation.codec' : ['mpeg4', str],
+    'animation.bitrate' : [1800, validate_int],
+    'animation.frame_format' : ['png', validate_movie_frame_fmt], # Controls image format when frames are written to disk
+    'animation.ffmpeg_path' : ['ffmpeg', str], # Path to FFMPEG binary. If just binary name, subprocess uses $PATH.
+    'animation.ffmpeg_args' : ['', validate_stringlist], # Additional arguments for ffmpeg movie writer (using pipes)
+    'animation.mencoder_path' : ['mencoder', str], # Path to FFMPEG binary. If just binary name, subprocess uses $PATH.
+    'animation.mencoder_args' : ['', validate_stringlist], # Additional arguments for mencoder movie writer (using pipes)
 }
 
 if __name__ == '__main__':
