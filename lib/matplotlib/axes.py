@@ -5806,10 +5806,10 @@ class Axes(martist.Artist):
 
         if not self._hold: self.cla()
 
-        c = (self._get_lines.color_cycle.next() if 'c' in kwargs else
+        c = (self._get_lines.color_cycle.next() if 'c' not in kwargs else
              kwargs.pop('c'))
         marker = (self._get_lines.marker_cycle.next() if
-                  'marker' in kwargs else
+                  'marker' not in kwargs else
                   kwargs.pop('marker'))
 
 
