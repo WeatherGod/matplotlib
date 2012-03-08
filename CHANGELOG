@@ -1,3 +1,7 @@
+2012-03-07 Refactor movie writing into useful classes that make use
+           of pipes to write image data to ffmpeg or mencoder. Also
+           improve settings for these and the ability to pass custom
+           options.
 2011-12-29 ps and pdf markers are now stroked only if the line width
            is nonzero for consistency with agg, fixes issue #621. - JKS
 
