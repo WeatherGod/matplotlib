@@ -472,7 +472,6 @@ class Poly3DCollection(PolyCollection):
         '''
 
         self.set_zsort(kwargs.pop('zsort', True))
-
         PolyCollection.__init__(self, verts, *args, **kwargs)
 
     _zsort_functions = {
@@ -539,7 +538,6 @@ class Poly3DCollection(PolyCollection):
         self.set_zsort(True)
         self._facecolors3d = PolyCollection.get_facecolors(self)
         self._edgecolors3d = PolyCollection.get_edgecolors(self)
-        self._alpha3d = PolyCollection.get_alpha(self)
 
     def set_sort_zpos(self,val):
         '''Set the position to use for z-sorting.'''
@@ -599,13 +597,20 @@ class Poly3DCollection(PolyCollection):
             return np.nan
 
     def set_facecolor(self, colors):
+        # _facecolors2d is the z-sorted version of _facecolors3d.
+        # The 3d version remains unaffected by any rotation,
+        # sorting and such. Unfortunately, in order for draw()
+        # to work properly, get_facecolors() has to return colors
+        # in the same order that would be returned by get_verts()
         PolyCollection.set_facecolor(self, colors)
         self._facecolors3d = PolyCollection.get_facecolor(self)
+        self._facecolors2d = self._facecolors3d
     set_facecolors = set_facecolor
 
     def set_edgecolor(self, colors):
         PolyCollection.set_edgecolor(self, colors)
         self._edgecolors3d = PolyCollection.get_edgecolor(self)
+        self._edgecolors2d = self._edgecolors3d
     set_edgecolors = set_edgecolor
 
     def set_alpha(self, alpha):
