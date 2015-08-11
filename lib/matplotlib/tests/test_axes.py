@@ -3895,6 +3895,17 @@ def test_shared_scale():
         assert_equal(ax.get_yscale(), 'linear')
         assert_equal(ax.get_xscale(), 'linear')
 
+
+@image_comparison(baseline_images=['box-forced_log'], extensions=['png'])
+def test_boxforced_log():
+    fig, axes = plt.subplots(2, 1, sharey=True)
+    plt.setp(axes.flat, aspect=1.0, adjustable='box-forced')
+    axes[0].plot(np.arange(10), np.logspace(-4, 1, 10))
+    axes[1].plot(np.arange(10), np.logspace(-4, 1, 10))
+    axes[0].set_yscale('logit')
+    axes[1].set_yscale('logit')
+
+
 if __name__ == '__main__':
     import nose
     import sys

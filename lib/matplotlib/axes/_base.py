@@ -1175,7 +1175,7 @@ class _AxesBase(martist.Artist):
             position = self.get_position(original=True)
 
         aspect = self.get_aspect()
-
+        aspect_scale_mode = None
         if self.name != 'polar':
             xscale, yscale = self.get_xscale(), self.get_yscale()
             if xscale == "linear" and yscale == "linear":
